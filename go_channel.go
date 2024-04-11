@@ -1269,6 +1269,7 @@ func main() {
 // 著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
 */
 
+/*
 package main
 
 import (
@@ -1285,3 +1286,1314 @@ func main() {
 func hello() {
 	fmt.Println("Hello")
 }
+*/
+
+/*
+// deadlock, try to implement mpsc example
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+func sender(id int, messages chan<- string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	msg := fmt.Sprintf("hi from thread %d", id)
+	messages <- msg
+}
+
+func receiver(messages <-chan string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for msg := range messages {
+		fmt.Println("Got", msg)
+	}
+	fmt.Println("Receiver no longer receiving messages. Exiting program.")
+}
+
+func main() {
+	messages := make(chan string)
+	var wg sync.WaitGroup
+
+	// Spawn sender goroutines
+	for i := 1; i <= 3; i++ {
+		wg.Add(1)
+		go sender(i, messages, &wg)
+	}
+
+	// Spawn receiver goroutine
+	wg.Add(1)
+	go receiver(messages, &wg)
+
+	// Wait for all goroutines to finish
+	wg.Wait()
+
+	fmt.Println("All tasks finished. Exiting program.")
+}
+*/
+
+/*
+// In this step, We can modify the logic to automatically terminate the program once all tasks (sender goroutines) have completed their work. We can achieve this by using a sync.WaitGroup to track the completion of all sender goroutines and then exit the program when they are all done.
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+func sender(id int, messages chan<- string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	msg := fmt.Sprintf("hi from thread %d", id)
+	messages <- msg
+}
+
+func receiver(messages <-chan string) {
+	for msg := range messages {
+		fmt.Println("Got", msg)
+	}
+	fmt.Println("Receiver no longer receiving messages. Exiting program.")
+}
+
+func main() {
+	start := time.Now()
+
+	messages := make(chan string)
+	var wg sync.WaitGroup
+
+	// Spawn sender goroutines
+	for i := 1; i <= 3; i++ {
+		wg.Add(1)
+		go sender(i, messages, &wg)
+	}
+
+	// Spawn receiver goroutine
+	go receiver(messages)
+
+	// Wait for all sender goroutines to finish
+	wg.Wait()
+
+	// Close the messages channel to signal the receiver to stop
+	close(messages)
+
+	// fmt.Println("All tasks finished. Exiting program.")
+	duration := time.Since(start)
+	fmt.Println("Go Execution time:", duration.Microseconds(), "µs")
+
+}
+*/
+
+/*
+// STATUS: deadlock
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+func sender1(messages chan<- string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for i := 1; i <= 3; i++ {
+		msg := fmt.Sprintf("hi from task %d, goroutine sender1", i)
+		messages <- msg
+	}
+}
+
+func sender2(messages chan<- string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for i := 4; i <= 10; i++ {
+		msg := fmt.Sprintf("hi from task %d, goroutine sender2", i)
+		messages <- msg
+	}
+}
+
+func receiver(messages <-chan string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for msg := range messages {
+		fmt.Println("Got", msg)
+	}
+	fmt.Println("Receiver no longer receiving messages. Exiting program.")
+}
+
+func main() {
+	messages := make(chan string)
+	var wg sync.WaitGroup
+
+	// Spawn sender1 goroutine
+	wg.Add(1)
+	go sender1(messages, &wg)
+
+	// Spawn sender2 goroutine
+	wg.Add(1)
+	go sender2(messages, &wg)
+
+	// Spawn receiver goroutine
+	wg.Add(1)
+	go receiver(messages, &wg)
+
+	// Wait for all goroutines to finish
+	wg.Wait()
+
+	close(messages) // still deadlock
+
+	fmt.Println("All tasks finished. Exiting program.")
+}
+*/
+
+/*
+// STATUS: worked but sometimes give panic: send on closed channel
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+func sender1(messages chan<- string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for i := 1; i <= 3; i++ {
+		msg := fmt.Sprintf("hi from task %d, goroutine sender1", i)
+		messages <- msg
+	}
+}
+
+func sender2(messages chan<- string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for i := 4; i <= 10; i++ {
+		msg := fmt.Sprintf("hi from task %d, goroutine sender2", i)
+		messages <- msg
+	}
+	close(messages) // Close the channel after all messages are sent
+}
+
+func receiver(messages <-chan string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for msg := range messages {
+		fmt.Println("Got", msg)
+	}
+	fmt.Println("Receiver no longer receiving messages. Exiting program.")
+}
+
+func main() {
+	start := time.Now()
+
+	messages := make(chan string)
+	var wg sync.WaitGroup
+
+	// Spawn receiver goroutine
+	wg.Add(1)
+	go receiver(messages, &wg)
+
+	// Spawn sender1 goroutine
+	wg.Add(1)
+	go sender1(messages, &wg)
+
+	// Spawn sender2 goroutine
+	wg.Add(1)
+	go sender2(messages, &wg)
+
+	// Wait for all goroutines to finish
+	wg.Wait()
+
+	fmt.Println("All tasks finished. Exiting program.")
+
+	duration := time.Since(start)
+	fmt.Println("Go Execution time:", duration.Microseconds(), "µs")
+}
+
+*/
+
+/*
+// still deadlock again
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+func sender1(messages chan<- string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for i := 1; i <= 3; i++ {
+		msg := fmt.Sprintf("hi from task %d, goroutine sender1", i)
+		messages <- msg
+	}
+}
+
+func sender2(messages chan<- string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for i := 4; i <= 10; i++ {
+		msg := fmt.Sprintf("hi from task %d, goroutine sender2", i)
+		messages <- msg
+	}
+}
+
+func receiver(messages <-chan string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for msg := range messages {
+		fmt.Println("Got", msg)
+	}
+}
+
+func main() {
+	messages := make(chan string)
+	var wg sync.WaitGroup
+
+	// Wait group for sender goroutines
+	var senderWG sync.WaitGroup
+
+	// Spawn receiver goroutine
+	wg.Add(1)
+	go func() {
+		receiver(messages, &wg)
+		senderWG.Wait() // Wait for all sender goroutines to finish
+		close(messages)
+	}()
+
+	// Spawn sender1 goroutine
+	senderWG.Add(1)
+	go sender1(messages, &senderWG)
+
+	// Spawn sender2 goroutine
+	senderWG.Add(1)
+	go sender2(messages, &senderWG)
+
+	// Wait for all goroutines to finish
+	wg.Wait()
+
+	fmt.Println("All tasks finished. Exiting program.")
+}
+*/
+
+/*
+// STATUS: fixed, deadlock-freed
+// I see, the issue is that the receiver goroutine exits
+// after completing its work, causing the program to deadlock
+// as the main goroutine waits for the receiver to finish.
+// To fix this, we need to ensure that the receiver goroutine waits for all sender goroutines to finish before it exits.
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+func sender1(messages chan<- string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for i := 1; i <= 3; i++ {
+		msg := fmt.Sprintf("hi from task %d, goroutine sender1", i)
+		messages <- msg
+	}
+}
+
+func sender2(messages chan<- string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for i := 4; i <= 10; i++ {
+		msg := fmt.Sprintf("hi from task %d, goroutine sender2", i)
+		messages <- msg
+	}
+}
+
+func receiver(messages <-chan string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for msg := range messages {
+		fmt.Println("Got", msg)
+	}
+}
+
+func main() {
+	start := time.Now()
+
+	messages := make(chan string)
+	var wg sync.WaitGroup
+
+	// Wait group for sender goroutines
+	var senderWG sync.WaitGroup
+
+	// Spawn receiver goroutine
+	wg.Add(1)
+	go func() {
+		receiver(messages, &wg)
+	}()
+
+	// Spawn sender1 goroutine
+	senderWG.Add(1)
+	go sender1(messages, &senderWG)
+
+	// Spawn sender2 goroutine
+	senderWG.Add(1)
+	go sender2(messages, &senderWG)
+
+	// Wait for all sender goroutines to finish
+	senderWG.Wait()
+
+	// Close the messages channel after all sender goroutines have completed their work
+	close(messages)
+
+	// Wait for the receiver goroutine to finish
+	wg.Wait()
+
+	fmt.Println("All tasks finished. Exiting program.")
+
+	duration := time.Since(start)
+	fmt.Println("Go Execution time:", duration.Microseconds(), "µs")
+}
+
+*/
+/*
+Output:
+Got hi from task 4, goroutine sender2
+Got hi from task 1, goroutine sender1
+Got hi from task 5, goroutine sender2
+Got hi from task 6, goroutine sender2
+Got hi from task 7, goroutine sender2
+Got hi from task 8, goroutine sender2
+Got hi from task 9, goroutine sender2
+Got hi from task 10, goroutine sender2
+Got hi from task 2, goroutine sender1
+Got hi from task 3, goroutine sender1
+All tasks finished. Exiting program.
+Go Execution time: 131 µs
+*/
+
+/*
+// channel-eg1-deadlock.go
+// status: deadlock
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+const numTasks = 3
+
+func sender(senderID int, senderChannel chan string) {
+	fmt.Printf("Sender %d is waiting for send...\n", senderID)
+	message := "hi"
+	fmt.Printf("Sender %d: Starting\n", senderID)
+
+	// Simulate some work
+	// time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
+
+	// Send a message to indicate completion
+	senderChannel <- message
+	fmt.Printf("Sent message from sender %d\n", senderID)
+	fmt.Printf("Sender %d exiting...\n", senderID)
+}
+
+func receiver(senderChannel chan string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	fmt.Println("Receiver thread started.")
+
+	// Receive messages and print them as they arrive
+	for msg := range senderChannel {
+		fmt.Printf("Received: %s\n", msg)
+	}
+
+	fmt.Println("Receiver: All messages received.")
+}
+
+func main() {
+	// Calculate the time taken
+	start := time.Now()
+
+	// Create channel for communication between sender and receiver
+	senderChannel := make(chan string, numTasks)
+
+	// Create waitgroup to wait for receiver to finish
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	// Start receiver goroutine
+	go receiver(senderChannel, &wg)
+
+	// Spawn sender goroutines
+	for i := 0; i < numTasks; i++ {
+		go sender(i, senderChannel)
+	}
+
+	// Wait for all sender goroutines to complete
+	wg.Wait()
+
+	// Close the channel to signal the receiver goroutine
+	close(senderChannel)
+
+	// Wait for the receiver goroutine to finish
+	wg.Wait()
+
+	// Stop timer
+	elapsed := time.Since(start)
+
+	fmt.Printf("took %s to execute\n", elapsed)
+}
+*/
+
+/*
+// fixed deadlock
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+const numTasks = 3
+
+func sender(senderID int, senderChannel chan string, wgSender *sync.WaitGroup) {
+	defer wgSender.Done()
+	fmt.Printf("Sender %d is waiting for send...\n", senderID)
+	message := fmt.Sprintf("This is sender %d", senderID) // Format the message with sender's ID
+	fmt.Printf("Sender %d: Starting\n", senderID)
+
+	// Simulate some work
+	// time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
+
+	// Send a message to indicate completion
+	senderChannel <- message
+	fmt.Printf("Sent message from sender %d\n", senderID)
+	fmt.Printf("Sender %d exiting...\n", senderID)
+}
+
+func receiver(senderChannel chan string, wgReceiver *sync.WaitGroup) {
+	defer wgReceiver.Done()
+	fmt.Println("Receiver thread started.")
+
+	// Receive messages and print them as they arrive
+	for msg := range senderChannel {
+		fmt.Printf("Received: %s\n", msg)
+	}
+
+	fmt.Println("Receiver: All messages received.")
+}
+
+func main() {
+	// Calculate the time taken
+	start := time.Now()
+
+	// Create channel for communication between sender and receiver
+	senderChannel := make(chan string, numTasks)
+
+	// Create waitgroup for sender goroutines
+	var wgSender sync.WaitGroup
+	wgSender.Add(numTasks)
+
+	// Create waitgroup for receiver goroutine
+	var wgReceiver sync.WaitGroup
+	wgReceiver.Add(1)
+
+	// Start receiver goroutine
+	go receiver(senderChannel, &wgReceiver)
+
+	// Spawn sender goroutines
+	for i := 0; i < numTasks; i++ {
+		go sender(i, senderChannel, &wgSender)
+	}
+
+	// Wait for all sender goroutines to complete
+	wgSender.Wait()
+
+	// Close the channel to signal the receiver goroutine
+	close(senderChannel)
+
+	// Wait for the receiver goroutine to finish
+	wgReceiver.Wait()
+
+	// Stop timer
+	elapsed := time.Since(start)
+
+	fmt.Printf("took %s to execute\n", elapsed)
+}
+
+*/
+/*
+Output 1:
+Receiver thread started.
+Sender 0 is waiting for send...
+Sender 0: Starting
+Sent message from sender 0
+Sender 0 exiting...
+Received: This is sender 0
+Sender 1 is waiting for send...
+Sender 1: Starting
+Sent message from sender 1
+Sender 1 exiting...
+Received: This is sender 1
+Sender 2 is waiting for send...
+Sender 2: Starting
+Sent message from sender 2
+Sender 2 exiting...
+Received: This is sender 2
+Receiver: All messages received.
+took 204.691µs to execute
+
+Output 2:
+Receiver thread started.
+Sender 2 is waiting for send...
+Sender 2: Starting
+Sent message from sender 2
+Sender 2 exiting...
+Received: This is sender 2
+Sender 0 is waiting for send...
+Sender 0: Starting
+Sent message from sender 0
+Sender 0 exiting...
+Received: This is sender 0
+Sender 1 is waiting for send...
+Sender 1: Starting
+Sent message from sender 1
+Sender 1 exiting...
+Received: This is sender 1
+Receiver: All messages received.
+took 297.152µs to execute
+
+Output 3:
+Receiver thread started.
+Sender 1 is waiting for send...
+Sender 1: Starting
+Sent message from sender 1
+Sender 1 exiting...
+Received: This is sender 1
+Sender 2 is waiting for send...
+Sender 0 is waiting for send...
+Sender 0: Starting
+Sent message from sender 0
+Sender 0 exiting...
+Received: This is sender 0
+Sender 2: Starting
+Sent message from sender 2
+Sender 2 exiting...
+Received: This is sender 2
+Receiver: All messages received.
+took 207.463µs to execute
+
+Output 4:
+Sender 2 is waiting for send...
+Sender 2: Starting
+Sent message from sender 2
+Sender 2 exiting...
+Receiver thread started.
+Received: This is sender 2
+Sender 0 is waiting for send...
+Sender 0: Starting
+Sent message from sender 0
+Sender 0 exiting...
+Received: This is sender 0
+Sender 1 is waiting for send...
+Sender 1: Starting
+Sent message from sender 1
+Sender 1 exiting...
+Received: This is sender 1
+Receiver: All messages received.
+took 159.881µs to execute
+*/
+
+/*
+// channel-eg2.go
+// now put into a loop (each sender sends N messages):
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+const numTasks = 3
+const numMessagesPerSender = 3
+
+func sender(senderID int, senderChannel chan string, wgSender *sync.WaitGroup) {
+	defer wgSender.Done()
+	fmt.Printf("Sender %d is waiting for send...\n", senderID)
+	fmt.Printf("Sender %d: Starting\n", senderID)
+
+	// loop:
+	for i := 1; i <= numMessagesPerSender; i++ {
+		message := fmt.Sprintf("This is sender %d, message %d", senderID, i) // Format the message with sender's ID
+
+		// Simulate some work
+		// time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
+
+		// Send a message to indicate completion
+		senderChannel <- message
+		fmt.Printf("Sent message from sender %d\n", senderID)
+	}
+
+	fmt.Printf("Sender %d exiting...\n", senderID)
+}
+
+func receiver(senderChannel chan string, wgReceiver *sync.WaitGroup) {
+	defer wgReceiver.Done()
+	fmt.Println("Receiver thread started.")
+
+	// Receive messages and print them as they arrive
+	for msg := range senderChannel {
+		fmt.Printf("Received: %s\n", msg)
+	}
+
+	fmt.Println("Receiver: All messages received.")
+}
+
+func main() {
+	// Calculate the time taken
+	start := time.Now()
+
+	// Create channel for communication between sender and receiver
+	senderChannel := make(chan string, numTasks)
+
+	// Create waitgroup for sender goroutines
+	var wgSender sync.WaitGroup
+	wgSender.Add(numTasks)
+
+	// Create waitgroup for receiver goroutine
+	var wgReceiver sync.WaitGroup
+	wgReceiver.Add(1)
+
+	// Start receiver goroutine
+	go receiver(senderChannel, &wgReceiver)
+
+	// Spawn sender goroutines
+	for i := 0; i < numTasks; i++ {
+		go sender(i, senderChannel, &wgSender)
+	}
+
+	// Wait for all sender goroutines to complete
+	wgSender.Wait()
+
+	// Close the channel to signal the receiver goroutine
+	close(senderChannel)
+
+	// Wait for the receiver goroutine to finish
+	wgReceiver.Wait()
+
+	// Stop timer
+	elapsed := time.Since(start)
+
+	fmt.Printf("took %s to execute\n", elapsed)
+}
+
+*/
+/*
+Output 1:
+Receiver thread started.
+Sender 2 is waiting for send...
+Sender 2: Starting
+Sent message from sender 2
+Sent message from sender 2
+Sent message from sender 2
+Sender 2 exiting...
+Sender 0 is waiting for send...
+Sender 0: Starting
+Sent message from sender 0
+Sender 1 is waiting for send...
+Sender 1: Starting
+Received: This is sender 2, message 1
+Received: This is sender 2, message 2
+Received: This is sender 2, message 3
+Received: This is sender 0, message 1
+Received: This is sender 0, message 2
+Received: This is sender 1, message 1
+Sent message from sender 1
+Sent message from sender 1
+Sent message from sender 1
+Sender 1 exiting...
+Received: This is sender 1, message 2
+Received: This is sender 1, message 3
+Sent message from sender 0
+Sent message from sender 0
+Sender 0 exiting...
+Received: This is sender 0, message 3
+Receiver: All messages received.
+took 239.907µs to execute
+
+Output 2:
+Sender 2 is waiting for send...
+Sender 2: Starting
+Sent message from sender 2
+Sent message from sender 2
+Sent message from sender 2
+Sender 2 exiting...
+Sender 0 is waiting for send...
+Receiver thread started.
+Received: This is sender 2, message 1
+Received: This is sender 2, message 2
+Received: This is sender 2, message 3
+Sender 0: Starting
+Sender 1 is waiting for send...
+Sender 1: Starting
+Sent message from sender 1
+Sent message from sender 1
+Sent message from sender 1
+Sent message from sender 0
+Sender 1 exiting...
+Received: This is sender 1, message 1
+Received: This is sender 1, message 2
+Received: This is sender 1, message 3
+Received: This is sender 0, message 1
+Received: This is sender 0, message 2
+Sent message from sender 0
+Sent message from sender 0
+Sender 0 exiting...
+Received: This is sender 0, message 3
+Receiver: All messages received.
+took 187.563µs to execute
+
+Output 3:
+Receiver thread started.
+Sender 2 is waiting for send...
+Sender 2: Starting
+Sender 0 is waiting for send...
+Sent message from sender 2
+Sent message from sender 2
+Sent message from sender 2
+Sender 2 exiting...
+Sender 0: Starting
+Sent message from sender 0
+Sender 1 is waiting for send...
+Sender 1: Starting
+Received: This is sender 2, message 1
+Received: This is sender 2, message 2
+Received: This is sender 2, message 3
+Received: This is sender 0, message 1
+Received: This is sender 0, message 2
+Received: This is sender 1, message 1
+Sent message from sender 1
+Sent message from sender 1
+Sent message from sender 0
+Sent message from sender 0
+Sender 0 exiting...
+Received: This is sender 1, message 2
+Received: This is sender 1, message 3
+Received: This is sender 0, message 3
+Sent message from sender 1
+Sender 1 exiting...
+Receiver: All messages received.
+took 265.203µs to execute
+*/
+
+// *
+// Make a Go version for the Rust code (In Go, goroutines are used instead of threads. Goroutines are lightweight, managed by the Go runtime, and multiplexed onto a small number of OS threads. They are more efficient than traditional threads and are designed to handle concurrent tasks efficiently.)
+// STATUS: deadlock since we forgot to signal stop at the end of tasks
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+func sender(id int, senderChannel chan string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	fmt.Printf("Sender %d is waiting for send...\n", id)
+	curThreadID := id
+	for i := id*10 - 9; i <= id*10; i++ {
+		msg := fmt.Sprintf("This is thread %v, message %d", curThreadID, i)
+		senderChannel <- msg
+		fmt.Printf("Sent message from sender %d\n", id)
+	}
+	fmt.Printf("Sender %d exiting...\n", id)
+}
+
+func receiver(senderChannel chan string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	fmt.Println("Receiver thread started.")
+	for msg := range senderChannel {
+		fmt.Println("Got", msg)
+	}
+	fmt.Println("Receiver: All messages received.")
+}
+
+func main() {
+	// Start timer
+	start := time.Now()
+
+	senderChannel := make(chan string)
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go receiver(senderChannel, &wg)
+
+	for i := 1; i <= 3; i++ {
+		wg.Add(1)
+		go sender(i, senderChannel, &wg)
+	}
+
+	wg.Wait()
+	close(senderChannel)
+
+	// Stop timer
+	elapsed := time.Since(start)
+	fmt.Printf("took %s to execute\n", elapsed)
+}
+
+//*/
+
+/*
+// STATUS: still deadlock , why ??
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+func sender(id int, senderChannel chan string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	fmt.Printf("Sender %d is waiting for send...\n", id)
+	curThreadID := id
+	for i := id*10 - 9; i <= id*10; i++ {
+		msg := fmt.Sprintf("This is thread %v, message %d", curThreadID, i)
+		senderChannel <- msg
+		fmt.Printf("Sent message from sender %d\n", id)
+	}
+	fmt.Printf("Sender %d exiting...\n", id)
+}
+
+func receiver(senderChannel chan string, wg *sync.WaitGroup, done chan bool) {
+	defer wg.Done()
+	fmt.Println("Receiver thread started.")
+	for {
+		select {
+		case msg, ok := <-senderChannel:
+			if ok {
+				fmt.Println("Got", msg)
+			} else {
+				fmt.Println("Receiver: All messages received.")
+				done <- true
+				return
+			}
+		}
+	}
+}
+
+func main() {
+	// Start timer
+	start := time.Now()
+
+	senderChannel := make(chan string)
+	done := make(chan bool)
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go receiver(senderChannel, &wg, done)
+
+	for i := 1; i <= 3; i++ {
+		wg.Add(1)
+		go sender(i, senderChannel, &wg)
+	}
+
+	go func() {
+		wg.Wait()
+		close(senderChannel)
+	}()
+
+	<-done // Wait for the receiver to finish
+
+	// Stop timer
+	elapsed := time.Since(start)
+	fmt.Printf("took %s to execute\n", elapsed)
+}
+*/
+
+/*
+// STATUS: deadlock resolved, panic happened
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+func sender(id int, senderChannel chan string, wg *sync.WaitGroup, closeOnce *sync.Once) {
+	defer wg.Done()
+	defer closeOnce.Do(func() { close(senderChannel) }) // Close the channel when all senders are done
+	fmt.Printf("Sender %d is waiting for send...\n", id)
+	curThreadID := id
+	for i := id*10 - 9; i <= id*10; i++ {
+		msg := fmt.Sprintf("This is thread %v, message %d", curThreadID, i)
+		senderChannel <- msg
+		fmt.Printf("Sent message from sender %d\n", id)
+	}
+	fmt.Printf("Sender %d exiting...\n", id)
+}
+
+func receiver(senderChannel chan string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	fmt.Println("Receiver thread started.")
+	for msg := range senderChannel {
+		fmt.Println("Got", msg)
+	}
+	fmt.Println("Receiver: All messages received.")
+}
+
+func main() {
+	// Start timer
+	start := time.Now()
+
+	senderChannel := make(chan string)
+	var wg sync.WaitGroup
+	var closeOnce sync.Once
+
+	wg.Add(1)
+	go receiver(senderChannel, &wg)
+
+	for i := 1; i <= 3; i++ {
+		wg.Add(1)
+		go sender(i, senderChannel, &wg, &closeOnce)
+	}
+
+	wg.Wait()
+
+	// Stop timer
+	elapsed := time.Since(start)
+	fmt.Printf("took %s to execute\n", elapsed)
+}
+*/
+
+/*
+// STATUS: damn still panic
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+func sender(id int, senderChannel chan string, wg *sync.WaitGroup, closeOnce *sync.Once) {
+	defer wg.Done()
+	fmt.Printf("Sender %d is waiting for send...\n", id)
+	curThreadID := id
+	for i := id*10 - 9; i <= id*10; i++ {
+		msg := fmt.Sprintf("This is thread %v, message %d", curThreadID, i)
+
+		// Check if the channel is closed before sending data
+		select {
+		case <-closeOnce.Done():
+			return
+		default:
+			senderChannel <- msg
+			fmt.Printf("Sent message from sender %d\n", id)
+		}
+	}
+	fmt.Printf("Sender %d exiting...\n", id)
+}
+
+func receiver(senderChannel chan string, wg *sync.WaitGroup, done chan bool) {
+	defer wg.Done()
+	fmt.Println("Receiver thread started.")
+	receivedAll := false
+	for !receivedAll {
+		select {
+		case msg, ok := <-senderChannel:
+			if ok {
+				fmt.Println("Got", msg)
+			} else {
+				receivedAll = true
+				fmt.Println("Receiver: All messages received.")
+				done <- true
+			}
+		}
+	}
+}
+
+func main() {
+	// Start timer
+	start := time.Now()
+
+	senderChannel := make(chan string)
+	done := make(chan bool)
+	var wg sync.WaitGroup
+	var closeOnce sync.Once
+
+	wg.Add(1)
+	go receiver(senderChannel, &wg, done)
+
+	for i := 1; i <= 3; i++ {
+		wg.Add(1)
+		go sender(i, senderChannel, &wg, &closeOnce)
+	}
+
+	wg.Wait()
+
+	// Close the sender channel after all senders have finished
+	closeOnce.Do(func() { close(senderChannel) })
+
+	// Wait for the receiver to finish
+	<-done
+
+	// Stop timer
+	elapsed := time.Since(start)
+	fmt.Printf("took %s to execute\n", elapsed)
+}
+*/
+
+/*
+// resolved
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+func sender(id int, senderChannel chan string, wg *sync.WaitGroup, done chan bool) {
+	defer wg.Done()
+	defer func() {
+		fmt.Printf("Sender %d exiting...\n", id)
+	}()
+	fmt.Printf("Sender %d is waiting for send...\n", id)
+	curThreadID := id
+	for i := id*10 - 9; i <= id*10; i++ {
+		msg := fmt.Sprintf("This is thread %v, message %d", curThreadID, i)
+		senderChannel <- msg
+		fmt.Printf("Sent message from sender %d\n", id)
+	}
+	done <- true
+}
+
+func receiver(senderChannel chan string, wg *sync.WaitGroup, done chan bool) {
+	defer wg.Done()
+	fmt.Println("Receiver thread started.")
+	for {
+		select {
+		case msg, ok := <-senderChannel:
+			if ok {
+				fmt.Println("Got", msg)
+			} else {
+				fmt.Println("Receiver: All messages received.")
+				done <- true
+				return
+			}
+		}
+	}
+}
+
+func main() {
+	// Start timer
+	start := time.Now()
+
+	senderChannel := make(chan string)
+	done := make(chan bool)
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go receiver(senderChannel, &wg, done)
+
+	senderDone := make(chan bool)
+	for i := 1; i <= 3; i++ {
+		wg.Add(1)
+		go sender(i, senderChannel, &wg, senderDone)
+	}
+
+	go func() {
+		for i := 0; i < 3; i++ {
+			<-senderDone
+		}
+		close(senderChannel)
+	}()
+
+	// Wait for receiver and all sender goroutines to finish
+	<-done
+	wg.Wait()
+
+	// Stop timer
+	elapsed := time.Since(start)
+	fmt.Printf("took %s to execute\n", elapsed)
+}
+*/
+
+// deadlock
+/*
+package main
+
+import (
+	"fmt"
+	"math/rand"
+	"sync"
+	"time"
+)
+
+const (
+	numTasks    = 10
+	numThreads  = 2
+	messageSize = 50
+)
+
+var (
+	wg              sync.WaitGroup
+	senderChannel   = make(chan string, numTasks)
+	receiverChannel = make(chan string, numTasks)
+)
+
+func sender(senderID int) {
+	defer wg.Done()
+
+	fmt.Printf("Sender %d is waiting for send...\n", senderID)
+
+	message := "hi"
+	fmt.Printf("Sender %d: Starting\n", senderID)
+
+	// Simulate some work
+	time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
+
+	// Send a message to indicate completion
+	senderChannel <- message
+	fmt.Printf("Sent message from sender %d\n", senderID)
+	fmt.Printf("Sender %d exiting...\n", senderID)
+}
+
+func receiver() {
+	defer wg.Done()
+
+	fmt.Println("Receiver thread started.")
+
+	// Receive messages and print them as they arrive
+	receivedCount := 0
+	for receivedCount < numTasks {
+		msg := <-receiverChannel
+		fmt.Printf("Received: %s\n", msg)
+		receivedCount++
+	}
+
+	fmt.Println("Receiver: All messages received.")
+}
+
+func main() {
+	wg.Add(numThreads + 1) // Add receiver thread to wait group
+
+	// Start receiver thread
+	go receiver()
+
+	// Start sender threads
+	for i := 1; i <= numThreads; i++ {
+		go sender(i)
+	}
+
+	// Wait for all sender threads to finish
+	wg.Wait()
+
+	// Close channels
+	close(senderChannel)
+	close(receiverChannel)
+
+	fmt.Println("All sender threads finished.")
+}
+*/
+
+// fix
+/*
+package main
+
+import (
+	"fmt"
+	"math/rand"
+	"sync"
+	"time"
+)
+
+const (
+	numTasks    = 10
+	numThreads  = 2
+	messageSize = 50
+)
+
+var (
+	wg              sync.WaitGroup
+	senderChannel   = make(chan string, numTasks)
+	receiverChannel = make(chan string, numTasks)
+)
+
+func sender(senderID int) {
+	defer wg.Done()
+
+	fmt.Printf("Sender %d is waiting for send...\n", senderID)
+
+	message := "hi"
+	fmt.Printf("Sender %d: Starting\n", senderID)
+
+	// Simulate some work
+	time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
+
+	// Send a message to the receiver channel
+	receiverChannel <- message
+	fmt.Printf("Sent message from sender %d\n", senderID)
+	fmt.Printf("Sender %d exiting...\n", senderID)
+}
+
+func receiver() {
+	defer wg.Done()
+
+	fmt.Println("Receiver thread started.")
+
+	// Receive messages and print them as they arrive
+	receivedCount := 0
+	for receivedCount < numTasks {
+		msg := <-senderChannel
+		fmt.Printf("Received: %s\n", msg)
+		receivedCount++
+	}
+
+	fmt.Println("Receiver: All messages received.")
+}
+
+func main() {
+	wg.Add(numThreads + 1) // Add receiver thread to wait group
+
+	// Start receiver thread
+	go receiver()
+
+	// Start sender threads
+	for i := 1; i <= numTasks; i++ {
+		go sender(i)
+	}
+
+	// Wait for all sender threads to finish
+	wg.Wait()
+
+	// Close channels
+	close(senderChannel)
+	close(receiverChannel)
+
+	fmt.Println("All sender threads finished.")
+}
+*/
+/*
+Output:
+Sender 3 is waiting for send...
+Sender 3: Starting
+Sender 10 is waiting for send...
+Sender 10: Starting
+Sender 4 is waiting for send...
+Sender 4: Starting
+Sender 5 is waiting for send...
+Sender 5: Starting
+Sender 6 is waiting for send...
+Sender 6: Starting
+Sender 7 is waiting for send...
+Sender 7: Starting
+Sender 8 is waiting for send...
+Sender 8: Starting
+Sender 9 is waiting for send...
+Sender 9: Starting
+Receiver thread started.
+Sender 2 is waiting for send...
+Sender 2: Starting
+Sender 1 is waiting for send...
+Sender 1: Starting
+Sent message from sender 5
+Sender 5 exiting...
+Sent message from sender 3
+Sender 3 exiting...
+Sent message from sender 1
+Sender 1 exiting...
+All sender threads finished.
+*/
